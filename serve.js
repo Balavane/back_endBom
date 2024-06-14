@@ -2,61 +2,89 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
-const fs = require('fs');
+
 const app = express();
 const port = 3011;
 
-// Middleware pour gérer les téléchargements de fichiers avec Multer
+// Configure multer for file uploads
 const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
+  destination: (req, file, cb) => {
     cb(null, path.join(__dirname, 'uploads'));
   },
-  filename: function (req, file, cb) {
-    cb(null, file.originalname);
+  filename: (req, file, cb) => {
+    cb(null, `${Date.now()}-${file.originalname}`);
   }
 });
 
 const upload = multer({ storage });
 
-// Middleware pour parser le corps de la requête
+// Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Middleware pour activer CORS
 app.use(cors());
-
-// Middleware pour servir les fichiers statiques (images)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Stockage en mémoire pour les articles
+// In-memory storage for articles
 let articles = [];
 
-// Endpoint POST pour recevoir les données du formulaire
-app.post('/articles', upload.single('articleImage'), (req, res) => {
-  const { articleTitle, articleDescription, articleDetails } = req.body;
-  const articleImage = req.file; // Information sur l'image téléchargée
+// Définir l'utilisateur autorisé
+const authorizedUser = {
+  username: 'sergens',
+  password: 'Sergens0110'
+};
 
-  // Créez un nouvel article
+// Route de login
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  
+  if (username === authorizedUser.username && password === authorizedUser.password) {
+    // Authentification réussie
+    res.status(200).json({ message: 'Authentification réussie' });
+  } else {
+    // Authentification échouée
+    res.status(401).json({ message: 'Nom d\'utilisateur ou mot de passe incorrect' });
+  }
+});
+
+// Route pour gérer les données d'articles
+app.post('/articles', upload.single('articleImage'), (req, res) => {
+  const { articleTitle, articleDescription, articleDetails, articleCreationDate } = req.body;
+  const articleImage = req.file;
+
   const newArticle = {
     id: articles.length + 1,
     title: articleTitle,
     description: articleDescription,
     details: articleDetails,
+    creationDate: articleCreationDate,
     imagePath: articleImage ? `/uploads/${articleImage.filename}` : null
   };
+  
+  articles.unshift(newArticle);
 
-  // Ajoutez l'article au tableau en mémoire
-  articles.push(newArticle);
-
-  // Réponse au client
   res.status(200).json({ message: 'Données reçues avec succès', article: newArticle });
 });
 
-// Endpoint GET pour récupérer les articles
+// Route pour récupérer les articles
 app.get('/articles', (req, res) => {
-  // Réponse avec la liste des articles
   res.status(200).json({ articles });
 });
+
+// Route protégée (exemple)
+app.get('/paramettre', authenticateUser, (req, res) => {
+  res.send('Page paramettre - Accès autorisé uniquement pour l\'utilisateur authentifié.');
+});
+
+// Fonction middleware pour l'authentification
+function authenticateUser(req, res, next) {
+  // Vérifier ici l'authentification de l'utilisateur
+  // Exemple basique : si l'utilisateur est authentifié, appeler next(), sinon renvoyer une erreur
+  if (req.isAuthenticated()) {
+    return next();
+  } else {
+    return res.status(401).json({ message: 'Non authentifié' });
+  }
+}
 
 // Démarrer le serveur
 app.listen(port, () => {
