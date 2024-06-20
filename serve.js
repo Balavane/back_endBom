@@ -2,7 +2,9 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
+const { PrismaClient } = require('@prisma/client');
 
+const prisma = new PrismaClient();
 const app = express();
 const port = 3011;
 
@@ -24,9 +26,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// In-memory storage for articles
-let articles = [];
-
 // Définir l'utilisateur autorisé
 const authorizedUser = {
   username: 'sergens',
@@ -47,27 +46,37 @@ app.post('/login', (req, res) => {
 });
 
 // Route pour gérer les données d'articles
-app.post('/articles', upload.single('articleImage'), (req, res) => {
+app.post('/articles', upload.single('articleImage'), async (req, res) => {
   const { articleTitle, articleDescription, articleDetails, articleCreationDate } = req.body;
   const articleImage = req.file;
 
-  const newArticle = {
-    id: articles.length + 1,
-    title: articleTitle,
-    description: articleDescription,
-    details: articleDetails,
-    creationDate: articleCreationDate,
-    imagePath: articleImage ? `/uploads/${articleImage.filename}` : null
-  };
-  
-  articles.unshift(newArticle);
+  try {
+    const newArticle = await prisma.article.create({
+      data: {
+        title: articleTitle,
+        description: articleDescription,
+        details: articleDetails,
+        creationDate: new Date(articleCreationDate),
+        imagePath: articleImage ? `/uploads/${articleImage.filename}` : null
+      }
+    });
 
-  res.status(200).json({ message: 'Données reçues avec succès', article: newArticle });
+    res.status(200).json({ message: 'Données reçues avec succès', article: newArticle });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erreur lors de la création de l\'article' });
+  }
 });
 
 // Route pour récupérer les articles
-app.get('/articles', (req, res) => {
-  res.status(200).json({ articles });
+app.get('/articles', async (req, res) => {
+  try {
+    const articles = await prisma.article.findMany();
+    res.status(200).json({ articles });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erreur lors de la récupération des articles' });
+  }
 });
 
 // Route protégée (exemple)
