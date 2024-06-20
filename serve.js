@@ -45,7 +45,7 @@ app.post('/login', (req, res) => {
   }
 });
 
-// Route pour gérer les données d'articles
+
 app.post('/articles', upload.single('articleImage'), async (req, res) => {
   const { articleTitle, articleDescription, articleDetails, articleCreationDate } = req.body;
   const articleImage = req.file;
