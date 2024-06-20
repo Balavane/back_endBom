@@ -3,8 +3,6 @@ const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
 const { PrismaClient } = require('@prisma/client');
-const passport = require('passport');
-const LocalStrategy = require('passport-local').Strategy;
 
 const prisma = new PrismaClient();
 const app = express();
@@ -34,41 +32,21 @@ const authorizedUser = {
   password: 'Sergens0110'
 };
 
-// Passport.js initialization
-app.use(passport.initialize());
-
-// Configure local strategy for Passport
-passport.use(new LocalStrategy(
-  (username, password, done) => {
-    if (username === authorizedUser.username && password === authorizedUser.password) {
-      return done(null, authorizedUser);
-    } else {
-      return done(null, false, { message: 'Nom d\'utilisateur ou mot de passe incorrect' });
-    }
-  }
-));
-
-// Serialize and deserialize user for session management
-passport.serializeUser((user, done) => {
-  done(null, user.username);
-});
-
-passport.deserializeUser((username, done) => {
-  if (username === authorizedUser.username) {
-    done(null, authorizedUser);
-  } else {
-    done(new Error('Utilisateur non trouvé'), null);
-  }
-});
-
 // Route de login
-app.post('/login', passport.authenticate('local', {
-  successRedirect: '/success',
-  failureRedirect: '/failure'
-}));
+app.post('/login', (req, res) => {
+  const { username, password } = req.body;
+  
+  if (username === authorizedUser.username && password === authorizedUser.password) {
+    // Authentification réussie
+    res.status(200).json({ message: 'Authentification réussie' });
+  } else {
+    // Authentification échouée
+    res.status(401).json({ message: 'Nom d\'utilisateur ou mot de passe incorrect' });
+  }
+});
 
 // Route pour gérer les données d'articles
-app.post('/articles', authenticateUser, upload.single('articleImage'), async (req, res) => {
+app.post('/articles', upload.single('articleImage'), async (req, res) => {
   const { articleTitle, articleDescription, articleDetails, articleCreationDate } = req.body;
   const articleImage = req.file;
 
@@ -110,8 +88,10 @@ app.get('/paramettre', authenticateUser, (req, res) => {
   res.send('Page paramettre - Accès autorisé uniquement pour l\'utilisateur authentifié.');
 });
 
-// Middleware pour vérifier l'authentification de l'utilisateur
+// Fonction middleware pour l'authentification
 function authenticateUser(req, res, next) {
+  // Vérifier ici l'authentification de l'utilisateur
+  // Exemple basique : si l'utilisateur est authentifié, appeler next(), sinon renvoyer une erreur
   if (req.isAuthenticated()) {
     return next();
   } else {
