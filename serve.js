@@ -1,15 +1,15 @@
 require('dotenv').config();
 console.log('DATABASE_URL:', process.env.DATABASE_URL);
 
-const express = require( 'express' );
+const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
-const { PrismaClient } = require('@prisma/client');
+const fs = require('fs');
 
-const prisma = new PrismaClient();
 const app = express();
 const port = 3011;
+const articlesFilePath = path.join(__dirname, 'articles.json');
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -48,21 +48,42 @@ app.post('/login', (req, res) => {
   }
 });
 
+// Helper function to load articles from file
+const loadArticles = () => {
+  try {
+    const data = fs.readFileSync(articlesFilePath, 'utf-8');
+    return JSON.parse(data);
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return [];
+    } else {
+      throw error;
+    }
+  }
+};
 
-app.post('/articles', upload.single('articleImage'), async (req, res) => {
+// Helper function to save articles to file
+const saveArticles = (articles) => {
+  fs.writeFileSync(articlesFilePath, JSON.stringify(articles, null, 2));
+};
+
+app.post('/articles', upload.single('articleImage'), (req, res) => {
   const { articleTitle, articleDescription, articleDetails, articleCreationDate } = req.body;
   const articleImage = req.file;
 
   try {
-    const newArticle = await prisma.article.create({
-      data: {
-        title: articleTitle,
-        description: articleDescription,
-        details: articleDetails,
-        creationDate: new Date(articleCreationDate),
-        imagePath: articleImage ? `/uploads/${articleImage.filename}` : null
-      }
-    });
+    const articles = loadArticles();
+    const newArticle = {
+      id: Date.now().toString(),
+      title: articleTitle,
+      description: articleDescription,
+      details: articleDetails,
+      creationDate: new Date(articleCreationDate),
+      imagePath: articleImage ? `/uploads/${articleImage.filename}` : null
+    };
+
+    articles.unshift(newArticle);
+    saveArticles(articles);
 
     res.status(200).json({ message: 'Données reçues avec succès', article: newArticle });
   } catch (error) {
@@ -72,13 +93,10 @@ app.post('/articles', upload.single('articleImage'), async (req, res) => {
 });
 
 // Route pour récupérer les articles
-app.get('/articles', async (req, res) => {
+app.get('/articles', (req, res) => {
   try {
-    const articles = await prisma.article.findMany({
-      orderBy: {
-        creationDate: 'desc' // Trie par creationDate en ordre décroissant
-      }
-    });
+    const articles = loadArticles();
+    articles.sort((a, b) => new Date(b.creationDate) - new Date(a.creationDate));
     res.status(200).json({ articles });
   } catch (error) {
     console.error(error);
