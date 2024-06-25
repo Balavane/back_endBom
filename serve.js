@@ -1,15 +1,26 @@
-require('dotenv').config();
-console.log('DATABASE_URL:', process.env.DATABASE_URL);
-
 const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const cors = require('cors');
 const fs = require('fs');
+const sqlite3 = require('sqlite3').verbose();
 
 const app = express();
 const port = 3011;
-const articlesFilePath = path.join(__dirname, 'articles.json');
+const dbFilePath = path.join(__dirname, 'database.sqlite');
+const db = new sqlite3.Database(dbFilePath);
+
+// Création de la table articles si elle n'existe pas
+db.serialize(() => {
+  db.run(`CREATE TABLE IF NOT EXISTS articles (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    description TEXT,
+    details TEXT,
+    creationDate TEXT,
+    imagePath TEXT
+  )`);
+});
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
@@ -38,7 +49,7 @@ const authorizedUser = {
 // Route de login
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
-  
+
   if (username === authorizedUser.username && password === authorizedUser.password) {
     // Authentification réussie
     res.status(200).json({ message: 'Authentification réussie' });
@@ -48,60 +59,45 @@ app.post('/login', (req, res) => {
   }
 });
 
-// Helper function to load articles from file
-const loadArticles = () => {
-  try {
-    const data = fs.readFileSync(articlesFilePath, 'utf-8');
-    return JSON.parse(data);
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      return [];
-    } else {
-      throw error;
-    }
-  }
-};
-
-// Helper function to save articles to file
-const saveArticles = (articles) => {
-  fs.writeFileSync(articlesFilePath, JSON.stringify(articles, null, 2));
-};
-
+// Route pour ajouter un article
 app.post('/articles', upload.single('articleImage'), (req, res) => {
   const { articleTitle, articleDescription, articleDetails, articleCreationDate } = req.body;
   const articleImage = req.file;
 
-  try {
-    const articles = loadArticles();
-    const newArticle = {
-      id: Date.now().toString(),
-      title: articleTitle,
-      description: articleDescription,
-      details: articleDetails,
-      creationDate: new Date(articleCreationDate),
-      imagePath: articleImage ? `/uploads/${articleImage.filename}` : null
-    };
+  const newArticle = {
+    id: Date.now().toString(),
+    title: articleTitle,
+    description: articleDescription,
+    details: articleDetails,
+    creationDate: new Date(articleCreationDate).toISOString(),
+    imagePath: articleImage ? `/uploads/${articleImage.filename}` : null
+  };
 
-    articles.unshift(newArticle);
-    saveArticles(articles);
+  const { id, title, description, details, creationDate, imagePath } = newArticle;
 
-    res.status(200).json({ message: 'Données reçues avec succès', article: newArticle });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erreur lors de la création de l\'article' });
-  }
+  db.run(`INSERT INTO articles (id, title, description, details, creationDate, imagePath)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+          [id, title, description, details, creationDate, imagePath],
+          (error) => {
+            if (error) {
+              console.error(error);
+              res.status(500).json({ message: 'Erreur lors de la création de l\'article' });
+            } else {
+              res.status(200).json({ message: 'Données reçues avec succès', article: newArticle });
+            }
+          });
 });
 
 // Route pour récupérer les articles
 app.get('/articles', (req, res) => {
-  try {
-    const articles = loadArticles();
-    articles.sort((a, b) => new Date(b.creationDate) - new Date(a.creationDate));
-    res.status(200).json({ articles });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erreur lors de la récupération des articles' });
-  }
+  db.all(`SELECT * FROM articles ORDER BY creationDate DESC`, (error, rows) => {
+    if (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Erreur lors de la récupération des articles' });
+    } else {
+      res.status(200).json({ articles: rows });
+    }
+  });
 });
 
 // Route protégée (exemple)
