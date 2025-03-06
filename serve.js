@@ -7,9 +7,19 @@ const sqlite3 = require('sqlite3').verbose();
 const cloudinary = require('cloudinary').v2;
 
 const app = express();
-const port = 3011;
-const dbFilePath = path.join(__dirname, 'database.sqlite');
-const db = new sqlite3.Database(dbFilePath);
+
+
+// Configuration de base
+app.use(express.json({ limit: '50mb' })); // Augmenter la limite de taille des requêtes JSON
+app.use(express.urlencoded({ limit: '50mb', extended: true })); // Augmenter la limite de taille des requêtes URL encodées
+app.timeout = 60000; // Délai d'attente de 60 secondes
+app.use(cors()); // Activer CORS pour les requêtes cross-origin
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'))); // Servir les fichiers statiques du dossier uploads
+
+
+const port = 3011; // Port sur lequel le serveur écoute
+const dbFilePath = path.join(__dirname, 'database.sqlite'); // Chemin de la base de données SQLite
+const db = new sqlite3.Database(dbFilePath); // Connexion à la base de données
 
 // Configuration de Cloudinary
 cloudinary.config({
@@ -19,8 +29,9 @@ cloudinary.config({
   secure: true,
 });
 
-// Création de la table articles si elle n'existe pas
+// Création des tables dans la base de données
 db.serialize(() => {
+  // Créer la table articles si elle n'existe pas
   db.run(`CREATE TABLE IF NOT EXISTS articles (
     id TEXT PRIMARY KEY,
     title TEXT,
@@ -29,6 +40,12 @@ db.serialize(() => {
     creationDate TEXT,
     imageUrl TEXT
   )`);
+  db.run(`CREATE TABLE IF NOT EXISTS likes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    articleId TEXT NOT NULL,
+    userId TEXT NOT NULL,
+    UNIQUE(articleId, userId)
+)`);
 
   // Vérifier si la colonne imageUrl existe déjà
   db.all(`PRAGMA table_info(articles)`, (error, rows) => {
@@ -51,90 +68,33 @@ db.serialize(() => {
     }
   });
 
-  // (Optionnel) Supprimer l'ancienne colonne imagePath si elle existe
-  db.all(`PRAGMA table_info(articles)`, (error, rows) => {
-    if (error) {
-      console.error("Erreur lors de la récupération des informations de la table :", error);
-    } else {
-      const hasImagePath = rows.some(row => row.name === 'imagePath');
-      if (hasImagePath) {
-        console.log("La colonne imagePath existe. Création d'une nouvelle table sans imagePath...");
-
-        // Créer une nouvelle table temporaire
-        db.run(`CREATE TABLE IF NOT EXISTS articles_temp (
-          id TEXT PRIMARY KEY,
-          title TEXT,
-          description TEXT,
-          details TEXT,
-          creationDate TEXT,
-          imageUrl TEXT
-        )`, (error) => {
-          if (error) {
-            console.error("Erreur lors de la création de la table temporaire :", error);
-          } else {
-            // Copier les données de l'ancienne table vers la nouvelle
-            db.run(`INSERT INTO articles_temp (id, title, description, details, creationDate, imageUrl)
-                    SELECT id, title, description, details, creationDate, NULL FROM articles`, (error) => {
-              if (error) {
-                console.error("Erreur lors de la copie des données :", error);
-              } else {
-                // Supprimer l'ancienne table
-                db.run(`DROP TABLE articles`, (error) => {
-                  if (error) {
-                    console.error("Erreur lors de la suppression de l'ancienne table :", error);
-                  } else {
-                    // Renommer la nouvelle table en articles
-                    db.run(`ALTER TABLE articles_temp RENAME TO articles`, (error) => {
-                      if (error) {
-                        console.error("Erreur lors du renommage de la table :", error);
-                      } else {
-                        console.log("Colonne imagePath supprimée avec succès.");
-                      }
-                    });
-                  }
-                });
-              }
-            });
-          }
-        });
-      }
-    }
-  });
+  
+  
 });
 
-// Configure multer for file uploads
+// Configuration de Multer pour le téléchargement de fichiers
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, 'uploads'));
+    cb(null, path.join(__dirname, 'uploads')); // Dossier de destination des fichiers téléchargés
   },
   filename: (req, file, cb) => {
-    cb(null, `${Date.now()}-${file.originalname}`);
+    cb(null, `${Date.now()}-${file.originalname}`); // Nom du fichier téléchargé
   }
 });
-
 const upload = multer({ storage });
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cors());
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Définir l'utilisateur autorisé
+// Route de login
 const authorizedUser = {
   username: 'sergens',
   password: 'Sergens0110'
 };
-
-// Route de login
 app.post('/login', (req, res) => {
   const { username, password } = req.body;
 
   if (username === authorizedUser.username && password === authorizedUser.password) {
-    // Authentification réussie
     res.status(200).json({ message: 'Authentification réussie' });
   } else {
-    // Authentification échouée
     res.status(401).json({ message: 'Nom d\'utilisateur ou mot de passe incorrect' });
   }
 });
@@ -197,21 +157,58 @@ app.get('/articles', (req, res) => {
   });
 });
 
-// Route protégée (exemple)
-app.get('/paramettre', authenticateUser, (req, res) => {
-  res.send('Page paramettre - Accès autorisé uniquement pour l\'utilisateur authentifié.');
+// Route pour modifier un article
+app.put('/articles/:id', upload.single('articleImage'), async (req, res) => {
+  const { id } = req.params;
+  const { title, description, details, creationDate } = req.body;
+  const articleImage = req.file;
+
+  try {
+    let imageUrl = null;
+    if (articleImage) {
+      // Upload de la nouvelle image sur Cloudinary
+      const result = await cloudinary.uploader.upload(articleImage.path);
+      imageUrl = result.secure_url;
+
+      // Supprimer le fichier local après l'upload sur Cloudinary
+      fs.unlinkSync(articleImage.path);
+    }
+
+    // Mettre à jour l'article dans la base de données
+    db.run(
+      `UPDATE articles 
+       SET title = ?, description = ?, details = ?, creationDate = ?, imageUrl = ?
+       WHERE id = ?`,
+      [title, description, details, creationDate, imageUrl, id],
+      (error) => {
+        if (error) {
+          console.error(error);
+          res.status(500).json({ message: 'Erreur lors de la mise à jour de l\'article' });
+        } else {
+          res.status(200).json({ message: 'Article mis à jour avec succès' });
+        }
+      }
+    );
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erreur lors de l\'upload de l\'image sur Cloudinary' });
+  }
 });
 
-// Fonction middleware pour l'authentification
-function authenticateUser(req, res, next) {
-  // Vérifier ici l'authentification de l'utilisateur
-  // Exemple basique : si l'utilisateur est authentifié, appeler next(), sinon renvoyer une erreur
-  if (req.isAuthenticated()) {
-    return next();
-  } else {
-    return res.status(401).json({ message: 'Non authentifié' });
-  }
-}
+// Route pour supprimer un article
+app.delete('/articles/:id', (req, res) => {
+  const { id } = req.params;
+
+  db.run(`DELETE FROM articles WHERE id = ?`, [id], (error) => {
+    if (error) {
+      console.error(error);
+      res.status(500).json({ message: 'Erreur lors de la suppression de l\'article' });
+    } else {
+      res.status(200).json({ message: 'Article supprimé avec succès' });
+    }
+  });
+});
+
 
 // Démarrer le serveur
 app.listen(port, () => {
