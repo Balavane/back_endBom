@@ -10,10 +10,20 @@ generator client {
 }
 
 model Article {
-  id           Int      @id @default(autoincrement())
-  title        String
-  description  String
-  details      String
-  creationDate DateTime
-  imagePath    String?
+  id            Int      @id @default(autoincrement())
+  title         String
+  description   String
+  details       String
+  creationDate  DateTime @default(now())
+  imageUrl      String?
+  likes         Like[]
+}
+
+model Like {
+  id        Int      @id @default(autoincrement())
+  articleId Int
+  userId    String
+  article   Article  @relation(fields: [articleId], references: [id])
+
+  @@unique([articleId, userId])
 }
