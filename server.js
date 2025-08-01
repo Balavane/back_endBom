@@ -8,6 +8,7 @@ const fs = require('fs').promises;
 const cloudinary = require('cloudinary').v2;
 const { PrismaClient } = require('@prisma/client');
 const sharp = require('sharp');
+const nodemailer = require('nodemailer');
 
 const app = express();
 const prisma = new PrismaClient();
@@ -229,6 +230,109 @@ app.use((err, req, res, next) => {
   }
   res.status(500).json({ message: 'Une erreur est survenue' });
 });
+// Liker un article
+app.post('/articles/:id/like', async (req, res) => {
+  const articleId = parseInt(req.params.id);
+  const { userId } = req.body;
+
+  if (!userId) {
+    return res.status(400).json({ message: 'Le champ userId est requis' });
+  }
+
+  try {
+    // Vérifier si le like existe déjà
+    const existingLike = await prisma.like.findUnique({
+      where: {
+        articleId_userId: {
+          articleId,
+          userId,
+        },
+      },
+    });
+
+    if (existingLike) {
+      return res.status(400).json({ message: 'Vous avez déjà liké cet article' });
+    }
+
+    // Créer un nouveau like
+    const like = await prisma.like.create({
+      data: {
+        articleId,
+        userId,
+      },
+    });
+
+    return res.status(201).json({ message: 'Article liké avec succès', like });
+  } catch (error) {
+    console.error('Erreur lors du like de l\'article :', error);
+    return res.status(500).json({ message: 'Erreur serveur' });
+  }
+});
+// integration d'un systeme de paiement
+app.post('/envoyer-don-mail', async (req, res) => {
+  const { email, montant, devise, nom, postNom } = req.body;
+
+  if (!email || !montant || !devise || !nom || !postNom) {
+    return res.status(400).json({ message: 'Tous les champs sont requis.' });
+  }
+
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
+
+  const htmlContent = `
+    <p>Bonjour <strong>${nom} ${postNom}</strong>,</p>
+    <p>Nous avons bien reçu votre intention de faire un don de <strong>${montant} ${devise}</strong>. 🙏</p>
+    <p>Voici nos options de paiement :</p>
+
+    <ul>
+      <li>📱 Airtel Money : <strong>+243 97 751 4327</strong></li>
+    </ul>
+
+    <p>🏦 Compte bancaire :</p>
+    <ul>
+      <li>Banque : Accèss Bank</li>
+      <li>Numéro de compte : 30008257601</li>
+      <li>IBAN : CD000123456789000</li>
+      <li>SWIFT/BIC : BDESCDKI</li>
+    </ul>
+
+    <p>Merci de nous envoyer une preuve de paiement à <a href="mailto:contact@monassociation.org">contact@monassociation.org</a>.</p>
+    <p>Votre geste compte énormément. Merci du fond du cœur ❤️</p>
+  `;
+
+  const notificationToDaniel = `
+    <p><strong>${nom} ${postNom}</strong> (<strong>${email}</strong>) est en train de faire un don de <strong>${montant} ${devise}</strong>.</p>
+    <p>Veuillez vérifier et suivre si nécessaire.</p>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: `"Association Les Cœurs Solidaires" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Confirmation de votre don',
+      html: htmlContent,
+    });
+
+    await transporter.sendMail({
+      from: `"Association Les Cœurs Solidaires" <${process.env.EMAIL_USER}>`,
+      to: 'danielbashonga88@gmail.com',
+      subject: 'Un utilisateur prépare un don',
+      html: notificationToDaniel,
+    });
+
+    res.status(200).json({ message: 'E-mails envoyés avec succès' });
+  } catch (error) {
+    console.error('Erreur lors de l’envoi des mails :', error);
+    res.status(500).json({ message: 'Échec de l’envoi des mails' });
+  }
+});
+
+
 
 // Démarrer le serveur
 const port = process.env.PORT || 3011;

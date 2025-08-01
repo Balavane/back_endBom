@@ -1,13 +1,14 @@
-/*
-  Warnings:
+-- CreateTable
+CREATE TABLE "Article" (
+    "id" SERIAL NOT NULL,
+    "title" TEXT NOT NULL,
+    "description" TEXT NOT NULL,
+    "details" TEXT NOT NULL,
+    "creationDate" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "imageUrl" TEXT,
 
-  - You are about to drop the column `imagePath` on the `Article` table. All the data in the column will be lost.
-
-*/
--- AlterTable
-ALTER TABLE "Article" DROP COLUMN "imagePath",
-ADD COLUMN     "imageUrl" TEXT,
-ALTER COLUMN "creationDate" SET DEFAULT CURRENT_TIMESTAMP;
+    CONSTRAINT "Article_pkey" PRIMARY KEY ("id")
+);
 
 -- CreateTable
 CREATE TABLE "Like" (
