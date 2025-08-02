@@ -301,7 +301,7 @@ app.post('/envoyer-don-mail', async (req, res) => {
       <li>SWIFT/BIC : BDESCDKI</li>
     </ul>
 
-    <p>Merci de nous envoyer une preuve de paiement à <a href="mailto:contact@monassociation.org">contact@monassociation.org</a>.</p>
+    <p>Merci de nous envoyer une preuve de paiement à <a href="mailto:negrefilmafrika@gmail.com">negrefilmafrika@gmail.com</a>.</p>
     <p>Votre geste compte énormément. Merci du fond du cœur ❤️</p>
   `;
 
@@ -312,7 +312,7 @@ app.post('/envoyer-don-mail', async (req, res) => {
 
   try {
     await transporter.sendMail({
-      from: `"Association Les Cœurs Solidaires" <${process.env.EMAIL_USER}>`,
+      from: `"Afrika negre" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: 'Confirmation de votre don',
       html: htmlContent,
@@ -320,8 +320,8 @@ app.post('/envoyer-don-mail', async (req, res) => {
 
     await transporter.sendMail({
       from: `"Association Les Cœurs Solidaires" <${process.env.EMAIL_USER}>`,
-      to: 'danielbashonga88@gmail.com',
-      subject: 'Un utilisateur prépare un don',
+      to: 'negrefilmafrika@gmail.com',
+      subject: 'Un donnateur prépare un don',
       html: notificationToDaniel,
     });
 
