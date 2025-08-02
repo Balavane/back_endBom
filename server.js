@@ -319,8 +319,8 @@ app.post('/envoyer-don-mail', async (req, res) => {
     });
 
     await transporter.sendMail({
-      from: `"Association Les Cœurs Solidaires" <${process.env.EMAIL_USER}>`,
-      to: 'negrefilmafrika@gmail.com',
+      from: `"Afrika negre" <${process.env.EMAIL_USER}>`,
+      to: `<${process.env.EMAIL_USER}>`,
       subject: 'Un donnateur prépare un don',
       html: notificationToDaniel,
     });
