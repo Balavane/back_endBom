@@ -43,7 +43,7 @@ const fileFilter = (req, file, cb) => {
   if (allowedMimeTypes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error('Type de fichier non supporté'), false);
+    cb(new Error('fichier non supporté'), false);
   }
 };
 

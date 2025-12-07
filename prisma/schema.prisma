@@ -21,7 +21,7 @@ model Article {
 
 model Like {
   id        Int      @id @default(autoincrement())
-  articleId Int
+  articleId Int  
   userId    String
   article   Article  @relation(fields: [articleId], references: [id])
 
