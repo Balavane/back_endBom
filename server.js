@@ -1,0 +1,449 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
+console.log("--- DIAGNOSTIC DÉMARRAGE ---");
+console.log("📂 Chemin .env visé :", path.join(__dirname, '.env'));
+console.log("📧 EMAIL_USER détecté :", process.env.EMAIL_USER ? "OUI (" + process.env.EMAIL_USER + ")" : "NON ❌");
+console.log("📧 EMAIL_PASS détecté :", process.env.EMAIL_PASS ? "OUI" : "NON ❌");
+console.log("----------------------------");
+
+const express = require('express');
+// Ajout du module 'https' nécessaire pour l'auto-ping
+const https = require('https');
+const multer = require('multer');
+
+const cors = require('cors');
+const fs = require('fs').promises;
+const cloudinary = require('cloudinary').v2;
+const { PrismaClient } = require('@prisma/client');
+const sharp = require('sharp');
+const nodemailer = require('nodemailer');
+
+const app = express();
+const prisma = new PrismaClient();
+
+// Middleware
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+app.use(cors());
+
+// Configuration Cloudinary
+// ATTENTION: Il est recommandé de placer ces clés sensibles dans process.env
+cloudinary.config({
+    cloud_name: 'dsc9tpg60',
+    api_key: '512181693979963',
+    api_secret: '1sbfJ9JYMrHZYjnq-M44z71vBnA',
+    secure: true,
+    timeout: 120000,
+});
+
+// Création du dossier uploads s'il n'existe pas
+const createUploadsFolder = async () => {
+    try {
+        await fs.access(path.join(__dirname, 'uploads'));
+    } catch {
+        await fs.mkdir(path.join(__dirname, 'uploads'));
+    }
+};
+createUploadsFolder();
+
+// Configuration Multer avec validation
+const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+const fileFilter = (req, file, cb) => {
+    if (allowedMimeTypes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Type de fichier non supporté'), false);
+    }
+};
+
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, path.join(__dirname, 'uploads'));
+    },
+    filename: (req, file, cb) => {
+        const cleanedFileName = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
+        cb(null, `${Date.now()}-${cleanedFileName}`);
+    },
+});
+
+const upload = multer({
+    storage,
+    fileFilter,
+    limits: { fileSize: 10 * 1024 * 1024 } // 10MB max
+});
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Login simple
+const authorizedUser = {
+    username: 'sergens',
+    password: 'Sergens0110',
+};
+
+app.post('/login', (req, res) => {
+    const { username, password } = req.body;
+    if (username === authorizedUser.username && password === authorizedUser.password) {
+        return res.status(200).json({ message: 'Authentification réussie' });
+    }
+    return res.status(401).json({ message: 'Nom d\'utilisateur ou mot de passe incorrect' });
+});
+
+// Ajouter un article
+app.post('/articles', upload.single('articleImage'), async (req, res) => {
+    const { articleTitle, articleDescription, articleDetails } = req.body;
+    const articleImage = req.file;
+
+    // Validation des entrées
+    if (!articleTitle || !articleDescription) {
+        return res.status(400).json({ message: 'Le titre et la description sont obligatoires' });
+    }
+
+    try {
+        let imageUrl = null;
+        if (articleImage) {
+            try {
+                await fs.access(articleImage.path);
+            } catch {
+                return res.status(400).json({ message: 'Le fichier image est introuvable' });
+            }
+
+            const compressedImagePath = path.join(__dirname, 'uploads', `compressed-${articleImage.filename}`);
+
+            // Compression de l'image
+            await sharp(articleImage.path)
+                .resize(800)
+                .jpeg({ quality: 50 })
+                .toFile(compressedImagePath);
+
+            // Upload vers Cloudinary
+            const result = await cloudinary.uploader.upload(compressedImagePath, {
+                timeout: 120000,
+            });
+            imageUrl = result.secure_url;
+
+            // Nettoyage des fichiers temporaires
+            try {
+                await fs.unlink(articleImage.path);
+                await fs.unlink(compressedImagePath);
+            } catch (unlinkError) {
+                console.error('Erreur lors de la suppression des fichiers:', unlinkError);
+            }
+        }
+
+        const newArticle = await prisma.article.create({
+            data: {
+                title: articleTitle,
+                description: articleDescription,
+                details: articleDetails,
+                imageUrl,
+            },
+        });
+
+        return res.status(201).json({ message: 'Article créé avec succès', article: newArticle });
+    } catch (error) {
+        console.error('Erreur lors de la création de l\'article:', error);
+        return res.status(500).json({ message: 'Erreur lors de la création de l\'article' });
+    }
+});
+
+// Récupérer les articles
+// Récupérer les articles avec status like pour l'utilisateur
+app.get('/articles', async (req, res) => {
+    const { userId } = req.query;
+    try {
+        const articles = await prisma.article.findMany({
+            orderBy: { creationDate: 'desc' },
+            include: {
+                _count: {
+                    select: { likes: true, comments: true },
+                },
+            },
+        });
+
+        const articlesWithStatus = await Promise.all(articles.map(async (article) => {
+            let isLiked = false;
+            if (userId) {
+                const like = await prisma.like.findUnique({
+                    where: {
+                        articleId_userId: {
+                            articleId: article.id,
+                            userId: userId,
+                        },
+                    },
+                });
+                isLiked = !!like;
+            }
+            return {
+                ...article,
+                isLiked,
+                likesCount: article._count.likes,
+                commentsCount: article._count.comments
+            };
+        }));
+
+        return res.status(200).json({ articles: articlesWithStatus });
+    } catch (error) {
+        console.error('Erreur lors de la récupération des articles:', error);
+        return res.status(500).json({ message: 'Erreur lors de la récupération des articles' });
+    }
+});
+
+// Modifier un article
+app.put('/articles/:id', upload.single('articleImage'), async (req, res) => {
+    const { id } = req.params;
+    const { title, description, details } = req.body;
+    const articleImage = req.file;
+
+    if (!title || !description) {
+        return res.status(400).json({ message: 'Le titre et la description sont obligatoires' });
+    }
+
+    try {
+        let imageUrl = null;
+        if (articleImage) {
+            try {
+                await fs.access(articleImage.path);
+            } catch {
+                return res.status(400).json({ message: 'Le fichier image est introuvable' });
+            }
+
+            const compressedImagePath = path.join(__dirname, 'uploads', `compressed-${articleImage.filename}`);
+
+            await sharp(articleImage.path)
+                .resize(800)
+                .jpeg({ quality: 50 })
+                .toFile(compressedImagePath);
+
+            const result = await cloudinary.uploader.upload(compressedImagePath, {
+                timeout: 120000,
+            });
+            imageUrl = result.secure_url;
+
+            try {
+                await fs.unlink(articleImage.path);
+                await fs.unlink(compressedImagePath);
+            } catch (unlinkError) {
+                console.error('Erreur lors de la suppression des fichiers:', unlinkError);
+            }
+        }
+
+        const updatedArticle = await prisma.article.update({
+            where: { id: parseInt(id) },
+            data: {
+                title,
+                description,
+                details,
+                ...(imageUrl && { imageUrl }) // Ne met à jour imageUrl que si une nouvelle image est fournie
+            },
+        });
+
+        return res.status(200).json({ message: 'Article mis à jour avec succès', article: updatedArticle });
+    } catch (error) {
+        console.error('Erreur lors de la mise à jour de l\'article:', error);
+        return res.status(500).json({ message: 'Erreur lors de la mise à jour de l\'article' });
+    }
+});
+
+// Supprimer un article
+app.delete('/articles/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const deletedArticle = await prisma.article.delete({
+            where: { id: parseInt(id) },
+        });
+        return res.status(200).json({ message: 'Article supprimé avec succès', article: deletedArticle });
+    } catch (error) {
+        console.error('Erreur lors de la suppression de l\'article:', error);
+        return res.status(500).json({ message: 'Erreur lors de la suppression de l\'article' });
+    }
+});
+
+// Liker/Unliker un article
+app.post('/articles/:id/like', async (req, res) => {
+    const articleId = parseInt(req.params.id);
+    const { userId } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({ message: 'Le champ userId est requis' });
+    }
+
+    try {
+        // Vérifier si le like existe déjà
+        const existingLike = await prisma.like.findUnique({
+            where: {
+                articleId_userId: {
+                    articleId,
+                    userId,
+                },
+            },
+        });
+
+        if (existingLike) {
+            // Unlike
+            await prisma.like.delete({
+                where: { id: existingLike.id },
+            });
+        } else {
+            // Like
+            await prisma.like.create({
+                data: {
+                    articleId,
+                    userId,
+                },
+            });
+        }
+
+        // Récupérer le nouveau nombre de likes
+        const likesCount = await prisma.like.count({
+            where: { articleId },
+        });
+
+        return res.status(200).json({
+            message: existingLike ? 'Like retiré' : 'Article liké',
+            likes: likesCount,
+            isLiked: !existingLike
+        });
+    } catch (error) {
+        console.error('Erreur lors du like/unlike:', error);
+        return res.status(500).json({ message: 'Erreur serveur' });
+    }
+});
+
+// Commentaires
+app.get('/articles/:id/comments', async (req, res) => {
+    try {
+        const comments = await prisma.comment.findMany({
+            where: { articleId: parseInt(req.params.id) },
+            orderBy: { createdAt: 'desc' },
+        });
+        res.json(comments);
+    } catch (error) {
+        res.status(500).json({ message: "Erreur récupération commentaires" });
+    }
+});
+
+app.post('/articles/:id/comments', async (req, res) => {
+    const { userId, content } = req.body;
+    const articleId = parseInt(req.params.id);
+
+    if (!content) return res.status(400).json({ message: "Contenu requis" });
+
+    try {
+        const comment = await prisma.comment.create({
+            data: { articleId, userId: userId || "Anonyme", content },
+        });
+        res.status(201).json(comment);
+    } catch (error) {
+        res.status(500).json({ message: "Erreur création commentaire" });
+    }
+});
+
+// integration d'un systeme de gestion des dons
+app.post('/enregistrer-don', async (req, res) => {
+    const { nom, postNom, email, telephone, montant, devise } = req.body;
+
+    if (!email || !montant || !devise || !nom || !postNom) {
+        return res.status(400).json({ message: 'Tous les champs sont requis.' });
+    }
+
+    try {
+        const montantF = parseFloat(montant);
+        if (isNaN(montantF)) {
+            return res.status(400).json({ message: 'Montant invalide.' });
+        }
+
+        const newDonation = await prisma.donation.create({
+            data: {
+                nom,
+                postNom,
+                email,
+                telephone,
+                montant: montantF,
+                devise,
+            },
+        });
+
+        console.log(`✅ Don enregistré en base : ${nom} ${postNom} - ${montant} ${devise}`);
+        return res.status(201).json({ message: 'Don enregistré avec succès', donation: newDonation });
+    } catch (error) {
+        console.error('Erreur lors de l’enregistrement du don :', error);
+        res.status(500).json({ message: 'Échec de l’enregistrement du don' });
+    }
+});
+
+// Récupérer tous les dons (Admin)
+app.get('/donations', async (req, res) => {
+    try {
+        const donations = await prisma.donation.findMany({
+            orderBy: { date: 'desc' },
+        });
+        return res.status(200).json({ donations });
+    } catch (error) {
+        console.error('Erreur lors de la récupération des dons:', error);
+        return res.status(500).json({ message: 'Erreur lors de la récupération des dons' });
+    }
+});
+
+// Supprimer un don (Optionnel pour l'admin)
+app.delete('/donations/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.donation.delete({
+            where: { id: parseInt(id) },
+        });
+        return res.status(200).json({ message: 'Don supprimé avec succès' });
+    } catch (error) {
+        return res.status(500).json({ message: 'Erreur lors de la suppression' });
+    }
+});
+
+// Middleware de gestion d'erreurs
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    if (err instanceof multer.MulterError) {
+        return res.status(400).json({ message: 'Erreur de téléchargement de fichier' });
+    }
+    res.status(500).json({ message: 'Une erreur est survenue' });
+});
+
+// Démarrer le serveur
+const port = process.env.PORT || 3011;
+
+// --- DÉBUT DU BLOC DE CODE KEEP-ALIVE ---
+
+// URL de votre service Render, utilisée pour s'auto-pinger
+// URL externe (Render) : Utiliser une variable d'environnement pour éviter le ping en local
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
+const INTERVAL = 10 * 60 * 1000; // 10 minutes en millisecondes (inférieur à 15 min)
+
+if (RENDER_EXTERNAL_URL && RENDER_EXTERNAL_URL.includes('onrender.com')) {
+
+    // Fonction pour envoyer le "ping"
+    const keepAlive = () => {
+        https.get(RENDER_EXTERNAL_URL, (res) => {
+            if (res.statusCode === 200) {
+                console.log(`[Keep-Alive] Ping réussi à ${RENDER_EXTERNAL_URL}. Statut: ${res.statusCode}.`);
+            } else {
+                console.warn(`[Keep-Alive] Ping réussi, mais statut non 200: ${res.statusCode}.`);
+            }
+        }).on('error', (err) => {
+            console.error(`[Keep-Alive] Erreur lors du ping : ${err.message}`);
+        });
+    };
+
+    // Démarrer l'intervalle de ping
+    setInterval(keepAlive, INTERVAL);
+    console.log(`[Keep-Alive] Démarrage de l'auto-ping toutes les ${INTERVAL / 60000} minutes.`);
+} else {
+    // Ce log n'apparaîtra qu'en local (si RENDER_EXTERNAL_URL n'est pas votre URL Render)
+    console.log('[Keep-Alive] Auto-ping non démarré (non déployé sur Render).');
+}
+
+// --- FIN DU BLOC DE CODE KEEP-ALIVE ---
+
+app.listen(port, () => {
+    console.log(`✅ Serveur backend démarré sur http://localhost:${port}`);
+});

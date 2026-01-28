@@ -1,0 +1,50 @@
+// schema.prisma
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Article {
+  id            Int      @id @default(autoincrement())
+  title         String
+  description   String
+  details       String
+  creationDate  DateTime @default(now())
+  imageUrl      String?
+  likes         Like[]
+  comments      Comment[]
+}
+
+model Like {
+  id        Int      @id @default(autoincrement())
+  articleId Int
+  userId    String
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@unique([articleId, userId])
+}
+
+model Comment {
+  id        Int      @id @default(autoincrement())
+  content   String
+  articleId Int
+  userId    String
+  createdAt DateTime @default(now())
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+}
+
+model Donation {
+  id        Int      @id @default(autoincrement())
+  nom       String
+  postNom   String
+  email     String
+  telephone String?
+  montant   Float
+  devise    String
+  date      DateTime @default(now())
+}
