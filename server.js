@@ -5,6 +5,7 @@ console.log("--- DIAGNOSTIC DÉMARRAGE ---");
 console.log("📂 Chemin .env visé :", path.join(__dirname, '.env'));
 console.log("📧 EMAIL_USER détecté :", process.env.EMAIL_USER ? "OUI (" + process.env.EMAIL_USER + ")" : "NON ❌");
 console.log("📧 EMAIL_PASS détecté :", process.env.EMAIL_PASS ? "OUI" : "NON ❌");
+console.log("🗄️ DATABASE_URL présent :", process.env.DATABASE_URL ? "OUI" : "NON ❌");
 console.log("----------------------------");
 
 const express = require('express');
@@ -601,8 +602,7 @@ const port = process.env.PORT || 3011;
 // --- DÉBUT DU BLOC DE CODE KEEP-ALIVE ---
 
 // URL de votre service Render, utilisée pour s'auto-pinger
-// URL externe (Render) : Utiliser une variable d'environnement pour éviter le ping en local
-const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL;
+const RENDER_EXTERNAL_URL = process.env.RENDER_EXTERNAL_URL || 'https://back-endbom.onrender.com';
 const INTERVAL = 10 * 60 * 1000; // 10 minutes en millisecondes (inférieur à 15 min)
 
 if (RENDER_EXTERNAL_URL && RENDER_EXTERNAL_URL.includes('onrender.com')) {
