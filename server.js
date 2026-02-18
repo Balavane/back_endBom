@@ -23,6 +23,17 @@ const nodemailer = require('nodemailer');
 const app = express();
 const prisma = new PrismaClient();
 
+// Test de connexion à la base de données au démarrage
+async function testDbConnection() {
+    try {
+        await prisma.$connect();
+        console.log("✅ Connexion à la base de données PostgreSQL réussie.");
+    } catch (e) {
+        console.error("❌ Échec de la connexion à la base de données :", e.message);
+    }
+}
+testDbConnection();
+
 // Middleware
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
