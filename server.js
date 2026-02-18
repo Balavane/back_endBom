@@ -6,6 +6,9 @@ console.log("📂 Chemin .env visé :", path.join(__dirname, '.env'));
 console.log("📧 EMAIL_USER détecté :", process.env.EMAIL_USER ? "OUI (" + process.env.EMAIL_USER + ")" : "NON ❌");
 console.log("📧 EMAIL_PASS détecté :", process.env.EMAIL_PASS ? "OUI" : "NON ❌");
 console.log("🗄️ DATABASE_URL présent :", process.env.DATABASE_URL ? "OUI" : "NON ❌");
+console.log("☁️ CLOUDINARY_CLOUD_NAME :", process.env.CLOUDINARY_CLOUD_NAME ? "OUI (" + process.env.CLOUDINARY_CLOUD_NAME + ")" : "NON ❌");
+console.log("☁️ CLOUDINARY_API_KEY :", process.env.CLOUDINARY_API_KEY ? "OUI (" + process.env.CLOUDINARY_API_KEY.substring(0, 4) + "****)" : "NON ❌");
+console.log("☁️ CLOUDINARY_API_SECRET :", process.env.CLOUDINARY_API_SECRET ? "OUI (****" + process.env.CLOUDINARY_API_SECRET.substring(process.env.CLOUDINARY_API_SECRET.length - 4) + ")" : "NON ❌");
 console.log("----------------------------");
 
 const express = require('express');
