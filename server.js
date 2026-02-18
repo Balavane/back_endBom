@@ -260,7 +260,10 @@ app.put('/articles/:id', upload.single('articleImage'), async (req, res) => {
         return res.status(200).json({ message: 'Article mis à jour avec succès', article: updatedArticle });
     } catch (error) {
         console.error('Erreur lors de la mise à jour de l\'article:', error);
-        return res.status(500).json({ message: 'Erreur lors de la mise à jour de l\'article' });
+        return res.status(500).json({
+            message: 'Erreur lors de la mise à jour de l\'article',
+            error: error.message
+        });
     }
 });
 
@@ -275,7 +278,10 @@ app.delete('/articles/:id', async (req, res) => {
         return res.status(200).json({ message: 'Article supprimé avec succès', article: deletedArticle });
     } catch (error) {
         console.error('Erreur lors de la suppression de l\'article:', error);
-        return res.status(500).json({ message: 'Erreur lors de la suppression de l\'article' });
+        return res.status(500).json({
+            message: 'Erreur lors de la suppression de l\'article',
+            error: error.message
+        });
     }
 });
 
@@ -326,7 +332,10 @@ app.post('/articles/:id/like', async (req, res) => {
         });
     } catch (error) {
         console.error('Erreur lors du like/unlike:', error);
-        return res.status(500).json({ message: 'Erreur serveur' });
+        return res.status(500).json({
+            message: 'Erreur serveur lors du like',
+            error: error.message
+        });
     }
 });
 
@@ -403,7 +412,10 @@ app.get('/articles/:id/comments', async (req, res) => {
         res.json(commentsWithStatus);
     } catch (error) {
         console.error('Erreur récupération commentaires:', error);
-        res.status(500).json({ message: "Erreur récupération commentaires" });
+        res.status(500).json({
+            message: "Erreur récupération commentaires",
+            error: error.message
+        });
     }
 });
 
@@ -481,7 +493,10 @@ app.post('/enregistrer-don', async (req, res) => {
         return res.status(201).json({ message: 'Don enregistré avec succès', donation: newDonation });
     } catch (error) {
         console.error('Erreur lors de l’enregistrement du don :', error);
-        res.status(500).json({ message: 'Échec de l’enregistrement du don' });
+        res.status(500).json({
+            message: 'Échec de l’enregistrement du don',
+            error: error.message
+        });
     }
 });
 
@@ -588,7 +603,10 @@ app.get('/donations', async (req, res) => {
         return res.status(200).json({ donations });
     } catch (error) {
         console.error('Erreur lors de la récupération des dons:', error);
-        return res.status(500).json({ message: 'Erreur lors de la récupération des dons' });
+        return res.status(500).json({
+            message: 'Erreur lors de la récupération des dons',
+            error: error.message
+        });
     }
 });
 
