@@ -28,11 +28,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(cors());
 
 // Configuration Cloudinary
-// ATTENTION: Il est recommandé de placer ces clés sensibles dans process.env
 cloudinary.config({
-    cloud_name: 'dsc9tpg60',
-    api_key: '512181693979963',
-    api_secret: '1sbfJ9JYMrHZYjnq-M44z71vBnA',
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
     secure: true,
     timeout: 120000,
 });
@@ -312,15 +311,79 @@ app.post('/articles/:id/like', async (req, res) => {
     }
 });
 
-// Commentaires
+// Commentaires avec réponses et likes
 app.get('/articles/:id/comments', async (req, res) => {
+    const { userId } = req.query;
     try {
         const comments = await prisma.comment.findMany({
-            where: { articleId: parseInt(req.params.id) },
+            where: {
+                articleId: parseInt(req.params.id),
+                parentId: null // Seulement les commentaires principaux
+            },
+            include: {
+                replies: {
+                    orderBy: { createdAt: 'asc' },
+                    include: {
+                        _count: {
+                            select: { likes: true }
+                        }
+                    }
+                },
+                _count: {
+                    select: { likes: true, replies: true }
+                }
+            },
             orderBy: { createdAt: 'desc' },
         });
-        res.json(comments);
+
+        // Ajouter le statut isLiked pour chaque commentaire et réponse
+        const commentsWithStatus = await Promise.all(comments.map(async (comment) => {
+            let isLiked = false;
+            if (userId) {
+                const like = await prisma.commentLike.findUnique({
+                    where: {
+                        commentId_userId: {
+                            commentId: comment.id,
+                            userId: userId
+                        }
+                    }
+                });
+                isLiked = !!like;
+            }
+
+            // Traiter les réponses
+            const repliesWithStatus = await Promise.all(comment.replies.map(async (reply) => {
+                let replyIsLiked = false;
+                if (userId) {
+                    const replyLike = await prisma.commentLike.findUnique({
+                        where: {
+                            commentId_userId: {
+                                commentId: reply.id,
+                                userId: userId
+                            }
+                        }
+                    });
+                    replyIsLiked = !!replyLike;
+                }
+                return {
+                    ...reply,
+                    likesCount: reply._count.likes,
+                    isLiked: replyIsLiked
+                };
+            }));
+
+            return {
+                ...comment,
+                likesCount: comment._count.likes,
+                repliesCount: comment._count.replies,
+                isLiked,
+                replies: repliesWithStatus
+            };
+        }));
+
+        res.json(commentsWithStatus);
     } catch (error) {
+        console.error('Erreur récupération commentaires:', error);
         res.status(500).json({ message: "Erreur récupération commentaires" });
     }
 });
@@ -338,6 +401,35 @@ app.post('/articles/:id/comments', async (req, res) => {
         res.status(201).json(comment);
     } catch (error) {
         res.status(500).json({ message: "Erreur création commentaire" });
+    }
+});
+
+// Supprimer un commentaire (Admin)
+app.delete('/articles/:articleId/comments/:commentId', async (req, res) => {
+    const { articleId, commentId } = req.params;
+
+    try {
+        // Vérifier que le commentaire existe et appartient à l'article
+        const comment = await prisma.comment.findFirst({
+            where: {
+                id: parseInt(commentId),
+                articleId: parseInt(articleId)
+            }
+        });
+
+        if (!comment) {
+            return res.status(404).json({ message: "Commentaire non trouvé" });
+        }
+
+        // Supprimer le commentaire
+        await prisma.comment.delete({
+            where: { id: parseInt(commentId) }
+        });
+
+        return res.status(200).json({ message: "Commentaire supprimé avec succès" });
+    } catch (error) {
+        console.error('Erreur lors de la suppression du commentaire:', error);
+        return res.status(500).json({ message: "Erreur lors de la suppression du commentaire" });
     }
 });
 
@@ -371,6 +463,100 @@ app.post('/enregistrer-don', async (req, res) => {
     } catch (error) {
         console.error('Erreur lors de l’enregistrement du don :', error);
         res.status(500).json({ message: 'Échec de l’enregistrement du don' });
+    }
+});
+
+// Répondre à un commentaire
+app.post('/articles/:articleId/comments/:commentId/reply', async (req, res) => {
+    const { userId, content } = req.body;
+    const { articleId, commentId } = req.params;
+
+    if (!content) return res.status(400).json({ message: "Contenu requis" });
+
+    try {
+        // Vérifier que le commentaire parent existe
+        const parentComment = await prisma.comment.findUnique({
+            where: { id: parseInt(commentId) }
+        });
+
+        if (!parentComment) {
+            return res.status(404).json({ message: "Commentaire parent non trouvé" });
+        }
+
+        // Créer la réponse
+        const reply = await prisma.comment.create({
+            data: {
+                articleId: parseInt(articleId),
+                userId: userId || "Anonyme",
+                content,
+                parentId: parseInt(commentId)
+            },
+            include: {
+                _count: {
+                    select: { likes: true }
+                }
+            }
+        });
+
+        res.status(201).json({
+            ...reply,
+            likesCount: reply._count.likes,
+            isLiked: false
+        });
+    } catch (error) {
+        console.error('Erreur création réponse:', error);
+        res.status(500).json({ message: "Erreur création réponse" });
+    }
+});
+
+// Liker/Unliker un commentaire
+app.post('/comments/:commentId/like', async (req, res) => {
+    const commentId = parseInt(req.params.commentId);
+    const { userId } = req.body;
+
+    if (!userId) {
+        return res.status(400).json({ message: 'Le champ userId est requis' });
+    }
+
+    try {
+        // Vérifier si le like existe déjà
+        const existingLike = await prisma.commentLike.findUnique({
+            where: {
+                commentId_userId: {
+                    commentId,
+                    userId,
+                },
+            },
+        });
+
+        if (existingLike) {
+            // Unlike
+            await prisma.commentLike.delete({
+                where: { id: existingLike.id },
+            });
+        } else {
+            // Like
+            await prisma.commentLike.create({
+                data: {
+                    commentId,
+                    userId,
+                },
+            });
+        }
+
+        // Récupérer le nouveau nombre de likes
+        const likesCount = await prisma.commentLike.count({
+            where: { commentId },
+        });
+
+        return res.status(200).json({
+            message: existingLike ? 'Like retiré' : 'Commentaire liké',
+            likes: likesCount,
+            isLiked: !existingLike
+        });
+    } catch (error) {
+        console.error('Erreur lors du like/unlike commentaire:', error);
+        return res.status(500).json({ message: 'Erreur serveur' });
     }
 });
 
