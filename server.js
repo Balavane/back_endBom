@@ -144,7 +144,11 @@ app.post('/articles', upload.single('articleImage'), async (req, res) => {
         return res.status(201).json({ message: 'Article créé avec succès', article: newArticle });
     } catch (error) {
         console.error('Erreur lors de la création de l\'article:', error);
-        return res.status(500).json({ message: 'Erreur lors de la création de l\'article' });
+        return res.status(500).json({
+            message: 'Erreur lors de la création de l\'article',
+            error: error.message,
+            stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
     }
 });
 
@@ -186,7 +190,10 @@ app.get('/articles', async (req, res) => {
         return res.status(200).json({ articles: articlesWithStatus });
     } catch (error) {
         console.error('Erreur lors de la récupération des articles:', error);
-        return res.status(500).json({ message: 'Erreur lors de la récupération des articles' });
+        return res.status(500).json({
+            message: 'Erreur lors de la récupération des articles',
+            error: error.message
+        });
     }
 });
 
