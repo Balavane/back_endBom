@@ -349,25 +349,17 @@ app.get('/articles/:id/comments', async (req, res) => {
         const comments = await prisma.comment.findMany({
             where: {
                 articleId: parseInt(req.params.id),
-                parentId: null // Seulement les commentaires principaux
+                // parentId: null // Supprimé pour récupérer TOUS les commentaires et les organiser en arbre au front-end
             },
             include: {
-                replies: {
-                    orderBy: { createdAt: 'asc' },
-                    include: {
-                        _count: {
-                            select: { likes: true }
-                        }
-                    }
-                },
                 _count: {
                     select: { likes: true, replies: true }
                 }
             },
-            orderBy: { createdAt: 'desc' },
+            orderBy: { createdAt: 'asc' }, // On les trie par date pour faciliter la construction de l'arbre
         });
 
-        // Ajouter le statut isLiked pour chaque commentaire et réponse
+        // Ajouter le statut isLiked pour chaque commentaire
         const commentsWithStatus = await Promise.all(comments.map(async (comment) => {
             let isLiked = false;
             if (userId) {
@@ -382,33 +374,11 @@ app.get('/articles/:id/comments', async (req, res) => {
                 isLiked = !!like;
             }
 
-            // Traiter les réponses
-            const repliesWithStatus = await Promise.all(comment.replies.map(async (reply) => {
-                let replyIsLiked = false;
-                if (userId) {
-                    const replyLike = await prisma.commentLike.findUnique({
-                        where: {
-                            commentId_userId: {
-                                commentId: reply.id,
-                                userId: userId
-                            }
-                        }
-                    });
-                    replyIsLiked = !!replyLike;
-                }
-                return {
-                    ...reply,
-                    likesCount: reply._count.likes,
-                    isLiked: replyIsLiked
-                };
-            }));
-
             return {
                 ...comment,
                 likesCount: comment._count.likes,
                 repliesCount: comment._count.replies,
-                isLiked,
-                replies: repliesWithStatus
+                isLiked
             };
         }));
 
