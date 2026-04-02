@@ -211,6 +211,60 @@ app.get('/articles', async (req, res) => {
     }
 });
 
+// Route pour les partages dynamiques (Cartes Open Graph)
+app.get('/share/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const article = await prisma.article.findUnique({
+            where: { id: parseInt(id) }
+        });
+
+        if (!article) {
+            return res.status(404).send('Article non trouvé');
+        }
+
+        // Tenter d'utiliser l'URL du referer ou une valeur par défaut
+        // NOTE : Il est recommandé d'ajouter FRONTEND_URL dans les variables d'environnement sur Render
+        const frontendUrl = process.env.FRONTEND_URL || req.get('referer') || "https://afrikanegre.onrender.com"; 
+
+        const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <!-- Open Graph / WhatsApp / Facebook -->
+    <meta property="og:type" content="article">
+    <meta property="og:url" content="${frontendUrl}/?articleId=${article.id}">
+    <meta property="og:title" content="${article.title}">
+    <meta property="og:description" content="${article.description}">
+    <meta property="og:image" content="${article.imageUrl}">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:title" content="${article.title}">
+    <meta property="twitter:description" content="${article.description}">
+    <meta property="twitter:image" content="${article.imageUrl}">
+
+    <title>${article.title}</title>
+    
+    <script>
+        // Redirection instantanée pour les humains
+        window.location.href = "${frontendUrl}/?articleId=${article.id}";
+    </script>
+</head>
+<body>
+    <p>Redirection vers l'article : ${article.title}...</p>
+</body>
+</html>`;
+
+        res.send(html);
+    } catch (error) {
+        console.error('Erreur partage:', error);
+        res.status(500).send('Erreur serveur');
+    }
+});
+
 // Modifier un article
 app.put('/articles/:id', upload.single('articleImage'), async (req, res) => {
     const { id } = req.params;
