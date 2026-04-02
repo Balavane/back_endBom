@@ -62,7 +62,7 @@ const createUploadsFolder = async () => {
 createUploadsFolder();
 
 // Configuration Multer avec validation
-const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/mpeg', 'video/webm', 'video/quicktime'];
 const fileFilter = (req, file, cb) => {
     if (allowedMimeTypes.includes(file.mimetype)) {
         cb(null, true);
@@ -84,7 +84,7 @@ const storage = multer.diskStorage({
 const upload = multer({
     storage,
     fileFilter,
-    limits: { fileSize: 10 * 1024 * 1024 } // 10MB max
+    limits: { fileSize: 100 * 1024 * 1024 } // 100MB max
 });
 
 // Serve static files from uploads directory
@@ -580,6 +580,100 @@ app.get('/donations', async (req, res) => {
             message: 'Erreur lors de la récupération des dons',
             error: error.message
         });
+    }
+});
+
+// --- GESTION DE LA GALERIE ---
+
+// Récupérer toutes les photos de la galerie
+app.get('/gallery', async (req, res) => {
+    try {
+        const photos = await prisma.gallery.findMany({
+            orderBy: { createdAt: 'desc' },
+        });
+        return res.status(200).json({ photos });
+    } catch (error) {
+        console.error('Erreur lors de la récupération de la galerie:', error);
+        return res.status(500).json({
+            message: 'Erreur lors de la récupération de la galerie',
+            error: error.message
+        });
+    }
+});
+
+// Ajouter une photo ou vidéo à la galerie
+app.post('/gallery', upload.single('photo'), async (req, res) => {
+    const file = req.file;
+
+    if (!file) {
+        return res.status(400).json({ message: 'Aucun fichier fourni' });
+    }
+
+    try {
+        const isVideo = file.mimetype.startsWith('video');
+        let imageUrl = null;
+
+        if (isVideo) {
+            // Upload Vidéo directement vers Cloudinary
+            const result = await cloudinary.uploader.upload(file.path, {
+                folder: 'gallery_videos',
+                resource_type: "video",
+                transformation: [
+                    { quality: "auto", fetch_format: "auto" }
+                ],
+                timeout: 300000,
+            });
+            imageUrl = result.secure_url;
+            await fs.unlink(file.path);
+        } else {
+            // Compression Image avec Sharp
+            const compressedImagePath = path.join(__dirname, 'uploads', `gallery-${file.filename}`);
+            await sharp(file.path)
+                .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+                .jpeg({ quality: 70 })
+                .toFile(compressedImagePath);
+
+            const result = await cloudinary.uploader.upload(compressedImagePath, {
+                folder: 'gallery_images',
+                timeout: 120000,
+            });
+            imageUrl = result.secure_url;
+
+            await fs.unlink(file.path);
+            await fs.unlink(compressedImagePath);
+        }
+
+        const newEntry = await prisma.gallery.create({
+            data: { 
+                url: imageUrl,
+                type: isVideo ? 'video' : 'image'
+            },
+        });
+
+        return res.status(201).json({ 
+            message: isVideo ? 'Vidéo ajoutée' : 'Photo ajoutée', 
+            photo: newEntry 
+        });
+    } catch (error) {
+        console.error('Erreur lors de l\'ajout à la galerie:', error);
+        return res.status(500).json({
+            message: 'Erreur lors de l\'ajout à la galerie',
+            error: error.message
+        });
+    }
+});
+
+// Supprimer une photo de la galerie
+app.delete('/gallery/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await prisma.gallery.delete({
+            where: { id: parseInt(id) },
+        });
+        return res.status(200).json({ message: 'Photo supprimée de la galerie' });
+    } catch (error) {
+        console.error('Erreur lors de la suppression de la photo:', error);
+        return res.status(500).json({ message: 'Erreur lors de la suppression' });
     }
 });
 

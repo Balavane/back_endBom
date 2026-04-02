@@ -68,3 +68,10 @@ model Donation {
   devise    String
   date      DateTime @default(now())
 }
+
+model Gallery {
+  id        Int      @id @default(autoincrement())
+  url       String
+  type      String   @default("image") // "image" ou "video"
+  createdAt DateTime @default(now())
+}
