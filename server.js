@@ -585,7 +585,19 @@ app.get('/donations', async (req, res) => {
 
 // --- GESTION DE LA GALERIE ---
 
-// Récupérer toutes les photos de la galerie
+// Route temporaire pour synchroniser la DB sur Render
+const { exec } = require('child_process');
+app.get('/sync-db', (req, res) => {
+    exec('npx prisma db push --accept-data-loss', (error, stdout, stderr) => {
+        if (error) {
+            console.error(`exec error: ${error}`);
+            return res.status(500).json({ error: error.message, stderr });
+        }
+        res.status(200).json({ stdout, stderr });
+    });
+});
+
+// Récupérer toutes les photos ou vidéos de la galerie
 app.get('/gallery', async (req, res) => {
     try {
         const photos = await prisma.gallery.findMany({
